@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hong Kong Monthly Temperature Matrix</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+        }
+        .controls {
+            margin-bottom: 20px;
+            margin-left: 50px;
+        }
+        button {
+            padding: 8px 16px;
+            font-size: 14px;
+            cursor: pointer;
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button:hover {
+            background-color: #e0e0e0;
+        }
+        .tooltip {
+            position: absolute;
+            background-color: white;
+            border: 1px solid #ccc;
+            padding: 8px;
+            font-size: 12px;
+            pointer-events: none;
+            opacity: 0;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+            transition: opacity 0.1s;
+        }
+        .cell {
+            stroke: white;
+            stroke-width: 2px;
+            cursor: pointer;
+        }
+        .cell:hover {
+            stroke: #333;
+            stroke-width: 2px;
+        }
+        .axis path,
+        .axis line {
+            fill: none;
+            stroke: #000;
+            shape-rendering: crispEdges;
+        }
+        .axis text {
+            font-size: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="controls">
+    <button id="toggleBtn">Showing: Max Temperature (Click to Switch)</button>
+</div>
+<div id="chart"></div>
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+    // 1. Set dimensions and margins
+    const margin = {top: 50, right: 50, bottom: 100, left: 100},
+          width = 1000 - margin.left - margin.right,
+          height = 500 - margin.top - margin.bottom;
+
+    const svg = d3.select("#chart")
+        .append("svg")
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+        .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select("#tooltip");
+    let showingMax = true;
+
+    // Month formatting arrays
+    const months = ["January", "February", "March", "April", "May", "June", 
+                    "July", "August", "September", "October", "November", "December"];
+    const monthNums = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"];
+
+    // 2. Load and Process Data
+    d3.csv("temperature_daily.csv").then(function(rawData) {
+        
+        // Parse dates and extract components
+        rawData.forEach(d => {
+            const dateParts = d.date.split("-");
+            d.year = dateParts[0];
+            d.monthNum = dateParts[1];
+            d.monthName = months[parseInt(d.monthNum, 10) - 1];
+            d.max_temperature = +d.max_temperature;
+            d.min_temperature = +d.min_temperature;
+        });
+
+        // Aggregate daily data to find monthly max and min
+        const rolledData = d3.rollup(rawData, 
+            v => ({
+                max: d3.max(v, d => d.max_temperature),
+                min: d3.min(v, d => d.min_temperature),
+                year: v[0].year,
+                monthName: v[0].monthName,
+                monthNum: v[0].monthNum
+            }), 
+            d => d.year, 
+            d => d.monthName
+        );
+
+        // Flatten the map back into an array for D3
+        const data = [];
+        for (let [year, monthMap] of rolledData) {
+            for (let [monthName, values] of monthMap) {
+                data.push(values);
+            }
+        }
+
+        // 3. Build X and Y Scales
+        const years = Array.from(new Set(data.map(d => d.year))).sort();
+
+        const x = d3.scaleBand()
+            .range([0, width])
+            .domain(years)
+            .padding(0.05);
+
+        svg.append("g")
+            .attr("transform", `translate(0,-5)`)
+            .call(d3.axisTop(x).tickSizeOuter(0));
+
+        const y = d3.scaleBand()
+            .range([0, height])
+            .domain(months)
+            .padding(0.05);
+
+        svg.append("g")
+            .call(d3.axisLeft(y).tickSizeOuter(0));
+
+        // 4. Color Scale
+        // Find global min and max to set the color scale domain accurately
+        const globalMax = d3.max(data, d => d.max);
+        const globalMin = d3.min(data, d => d.min);
+
+        const colorScale = d3.scaleSequential()
+            .interpolator(d3.interpolateYlOrRd)
+            .domain([globalMin, globalMax]);
+
+        // 5. Draw the Matrix Cells
+        const cells = svg.selectAll(".cell")
+            .data(data)
+            .enter()
+            .append("rect")
+            .attr("class", "cell")
+            .attr("x", d => x(d.year))
+            .attr("y", d => y(d.monthName))
+            .attr("width", x.bandwidth())
+            .attr("height", y.bandwidth())
+            .style("fill", d => colorScale(d.max)) // Default to max temp
+            .on("mouseover", function(event, d) {
+                tooltip.style("opacity", 1);
+                d3.select(this).style("stroke", "#000");
+            })
+            .on("mousemove", function(event, d) {
+                // Formatting tooltip to match the provided image format: "Date: 2002-03; max: 28 min: 14"[cite: 1]
+                tooltip.html(`Date: ${d.year}-${d.monthNum}; max: ${Math.round(d.max)} min: ${Math.round(d.min)}`)
+                       .style("left", (event.pageX + 15) + "px")
+                       .style("top", (event.pageY - 20) + "px");
+            })
+            .on("mouseleave", function() {
+                tooltip.style("opacity", 0);
+                d3.select(this).style("stroke", "white");
+            });
+
+        // 6. Toggle Interaction
+        d3.select("#toggleBtn").on("click", function() {
+            showingMax = !showingMax;
+            d3.select(this).text(`Showing: ${showingMax ? 'Max' : 'Min'} Temperature (Click to Switch)`);
+            
+            cells.transition()
+                 .duration(500)
+                 .style("fill", d => colorScale(showingMax ? d.max : d.min));
+        });
+
+        // 7. Draw the Legend
+        const legendWidth = 300;
+        const legendHeight = 15;
+        
+        const legendSvg = svg.append("g")
+            .attr("transform", `translate(${width - legendWidth}, ${height + 40})`);
+
+        // Define the gradient
+        const defs = svg.append("defs");
+        const linearGradient = defs.append("linearGradient")
+            .attr("id", "linear-gradient");
+
+        linearGradient.selectAll("stop")
+            .data(colorScale.ticks().map((t, i, n) => ({ 
+                offset: `${100*i/n.length}%`, 
+                color: colorScale(t) 
+            })))
+            .enter().append("stop")
+            .attr("offset", d => d.offset)
+            .attr("stop-color", d => d.color);
+
+        // Draw the rectangle and fill with gradient
+        legendSvg.append("rect")
+            .attr("width", legendWidth)
+            .attr("height", legendHeight)
+            .style("fill", "url(#linear-gradient)");
+
+        // Add legend axis
+        const legendScale = d3.scaleLinear()
+            .domain(colorScale.domain())
+            .range([0, legendWidth]);
+
+        const legendAxis = d3.axisBottom(legendScale)
+            .ticks(5)
+            .tickFormat(d => d + "°C");
+
+        legendSvg.append("g")
+            .attr("transform", `translate(0, ${legendHeight})`)
+            .call(legendAxis);
+            
+        legendSvg.append("text")
+            .attr("x", 0)
+            .attr("y", -5)
+            .style("font-size", "12px")
+            .text("Temperature Range");
+
+    }).catch(error => {
+        console.error("Error loading the CSV file. Make sure you are running a local server.", error);
+        d3.select("#chart").html("<p style='color:red;'>Error loading data. Ensure you are running a local web server (e.g., Python SimpleHTTPServer or VS Code Live Server) and that temperature_daily.csv exists in the root directory.</p>");
+    });
+</script>
+</body>
+</html>

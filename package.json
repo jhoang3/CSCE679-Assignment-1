@@ -1,0 +1,24 @@
+{
+  "name": "csce679-assignment-1",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jhoang3/CSCE679-Assignment-1.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/jhoang3/CSCE679-Assignment-1/issues"
+  },
+  "homepage": "https://github.com/jhoang3/CSCE679-Assignment-1#readme",
+  "dependencies": {
+    "d3": "^7.9.0"
+  }
+}
